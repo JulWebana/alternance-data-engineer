@@ -33,11 +33,11 @@ Outil de veille automatique qui collecte, déduplique et classe les offres d'alt
 
 | Plateforme | Méthode | Fiabilité |
 |---|---|---|
-| France Travail | API officielle | ✅ Très fiable |
-| Welcome to the Jungle | Scraping | ✅ Stable |
-| JobTeaser | Scraping | ✅ Stable |
-| Indeed | Scraping | ⚠️ Variable |
-| HelloWork | Scraping | ⚠️ Variable |
+| France Travail | API officielle | Très fiable |
+| Welcome to the Jungle | Scraping | Stable |
+| JobTeaser | Scraping | Stable |
+| Indeed | Scraping | Variable |
+| HelloWork | Scraping | Variable |
 
 > **Note :** LinkedIn n'est pas inclus car la plateforme bloque activement les scrapers et peut bannir les comptes qui tentent de contourner cette protection. Les sources ci-dessus couvrent la grande majorité des offres du marché français.
 
@@ -160,7 +160,7 @@ git push -u origin main
 
 1. Aller dans **Actions** → cliquer sur **"Scraper Alternance Data Engineer"**
 2. Cliquer sur **"Run workflow"** → **"Run workflow"**
-3. Vérifier que le statut passe au vert ✅
+3. Vérifier que le statut passe au vert 
 
 ---
 
