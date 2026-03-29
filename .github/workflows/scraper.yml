@@ -1,0 +1,42 @@
+name: Scraper Alternance Data Engineer
+
+on:
+  schedule:
+    - cron: "*/30 5-21 * * 1-5"
+    - cron: "0 8,12,16 * * 6-7"
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout du repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Installation des dependances
+        run: pip install -r requirements.txt
+
+      - name: Lancement du scraper
+        env:
+          FRANCE_TRAVAIL_ID: ${{ secrets.FRANCE_TRAVAIL_ID }}
+          FRANCE_TRAVAIL_SECRET: ${{ secrets.FRANCE_TRAVAIL_SECRET }}
+        run: python job_scraper.py
+
+      - name: Commit et Push du fichier Excel
+        run: |
+          git config --local user.email "bot@github-actions.com"
+          git config --local user.name "Scraper Bot"
+          git add offres_alternance_data_engineer.xlsx
+          git diff --staged --quiet || git commit -m "Mise a jour offres $(date +'%d/%m/%Y %H:%M')"
+          git push
