@@ -212,22 +212,22 @@ Tableau de bord récapitulatif indiquant le nombre d'offres collectées par sour
 
 ## Foire aux questions
 
-**Les offres s'accumulent-elles ou sont-elles remplacées ?**
+**a) Les offres s'accumulent-elles ou sont-elles remplacées ?**
 
 Les offres s'accumulent sans duplication. Le script détecte les doublons par URL et par combinaison titre + entreprise.
 
-**Le scraper peut-il tourner en permanence ?**
+**b) Le scraper peut-il tourner en permanence ?**
 
 GitHub Actions offre 2 000 minutes gratuites par mois sur les dépôts publics. À raison d'une exécution par heure, cela représente environ 720 minutes mensuelles, bien en dessous de la limite.
 
-**Que faire si le workflow échoue ?**
+**c) Que faire si le workflow échoue ?**
 
 Vérifier les logs dans l'onglet Actions en cliquant sur le run concerné, puis sur le job "scrape". L'erreur est indiquée à la ligne en rouge.
 
-**Comment récupérer le fichier Excel mis à jour ?**
+**d) Comment récupérer le fichier Excel mis à jour ?**
 
 Se rendre sur le dépôt GitHub → cliquer sur le fichier `offres_alternance_data_engineer.xlsx` → bouton **Download**.
 
-**Peut-on ajouter d'autres sources ?**
+**e) Peut-on ajouter d'autres sources ?**
 
 Oui. Chaque source correspond à une fonction dans `job_scraper.py`. Il suffit d'ajouter une nouvelle fonction suivant le même modèle et de l'appeler dans la fonction `run_scraper`.
