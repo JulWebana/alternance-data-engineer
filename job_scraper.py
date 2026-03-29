@@ -1,6 +1,7 @@
 """
 Scraper automatique d'offres d'alternance Data Engineer
 Sources : France Travail API, Welcome to the Jungle, JobTeaser, Indeed, HelloWork
+V2 : Mots-clés étendus + tri par date
 """
 
 import requests
@@ -11,14 +12,41 @@ from openpyxl.utils import get_column_letter
 from datetime import datetime
 import time
 import os
-import json
 import re
 
 # ───────────────────────────────────────────────
-# CONFIG
+# CONFIG — TOUS LES MOTS-CLÉS DU MÉTIER
 # ───────────────────────────────────────────────
-KEYWORDS = ["data engineer", "ingénieur data", "ingenieur data", "data engineering"]
-CONTRACT_TYPE = "alternance"
+KEYWORDS = [
+    # Français
+    "ingénieur data alternance",
+    "ingenieur data alternance",
+    "ingénieur big data alternance",
+    "ingénieur données alternance",
+    "architecte data alternance",
+    "ingénieur dataops alternance",
+    "ingénieur mlops alternance",
+    "développeur data alternance",
+    "ingénieur plateforme data alternance",
+    # Anglais
+    "data engineer alternance",
+    "big data engineer alternance",
+    "cloud data engineer alternance",
+    "data architect alternance",
+    "dataops engineer alternance",
+    "mlops engineer alternance",
+    "analytics engineer alternance",
+    "data platform engineer alternance",
+    "etl engineer alternance",
+    "data pipeline engineer alternance",
+    # Mixtes
+    "data engineer azure alternance",
+    "data engineer aws alternance",
+    "data engineer gcp alternance",
+    "data engineer spark alternance",
+    "consultant data engineer alternance",
+]
+
 OUTPUT_FILE = "offres_alternance_data_engineer.xlsx"
 
 HEADERS = {
@@ -34,8 +62,7 @@ HEADERS = {
 # ───────────────────────────────────────────────
 # FRANCE TRAVAIL API
 # ───────────────────────────────────────────────
-def get_france_travail_token(client_id: str, client_secret: str) -> str:
-    """Récupère le token OAuth2 France Travail."""
+def get_france_travail_token(client_id, client_secret):
     url = "https://entreprise.francetravail.fr/connexion/oauth2/access_token"
     params = {"realm": "/partenaire"}
     data = {
@@ -49,284 +76,211 @@ def get_france_travail_token(client_id: str, client_secret: str) -> str:
     return r.json()["access_token"]
 
 
-def scrape_france_travail(client_id: str = None, client_secret: str = None) -> list:
-    """
-    Scrape les offres via l'API officielle France Travail.
-    Si pas de clés API → retourne liste vide avec instruction.
-    """
+def scrape_france_travail(client_id=None, client_secret=None):
     if not client_id or not client_secret:
-        print("⚠️  France Travail : clés API manquantes (voir README)")
+        print("⚠️  France Travail : clés API manquantes")
         return []
-
     try:
         token = get_france_travail_token(client_id, client_secret)
         url = "https://api.francetravail.io/partenaire/offresdemploi/v2/offres/search"
         headers = {"Authorization": f"Bearer {token}", **HEADERS}
-        params = {
-            "motsCles": "data engineer",
-            "typeContrat": "CA",  # CA = Contrat d'apprentissage / alternance
-            "range": "0-149",
-        }
-        r = requests.get(url, headers=headers, params=params, timeout=15)
-        r.raise_for_status()
-        offres_raw = r.json().get("resultats", [])
-
-        offres = []
-        for o in offres_raw:
-            offres.append({
-                "titre": o.get("intitule", ""),
-                "entreprise": o.get("entreprise", {}).get("nom", "N/A"),
-                "lieu": o.get("lieuTravail", {}).get("libelle", ""),
-                "date_publication": o.get("dateCreation", "")[:10] if o.get("dateCreation") else "",
-                "contrat": "Alternance",
-                "source": "France Travail",
-                "lien": f"https://candidat.francetravail.fr/offres/recherche/detail/{o.get('id', '')}",
-                "description": o.get("description", "")[:300],
-            })
-        print(f"✅ France Travail : {len(offres)} offres récupérées")
-        return offres
-
+        all_offres = []
+        for kw in ["data engineer", "ingénieur data", "big data", "architecte data", "dataops", "mlops", "analytics engineer"]:
+            params = {"motsCles": kw, "typeContrat": "CA", "range": "0-49"}
+            r = requests.get(url, headers=headers, params=params, timeout=15)
+            if r.status_code != 200:
+                continue
+            for o in r.json().get("resultats", []):
+                all_offres.append({
+                    "titre": o.get("intitule", ""),
+                    "entreprise": o.get("entreprise", {}).get("nom", "N/A"),
+                    "lieu": o.get("lieuTravail", {}).get("libelle", ""),
+                    "date_publication": o.get("dateCreation", "")[:10] if o.get("dateCreation") else "",
+                    "contrat": "Alternance",
+                    "source": "France Travail",
+                    "lien": f"https://candidat.francetravail.fr/offres/recherche/detail/{o.get('id', '')}",
+                    "description": o.get("description", "")[:300],
+                })
+            time.sleep(1)
+        print(f"✅ France Travail : {len(all_offres)} offres")
+        return all_offres
     except Exception as e:
-        print(f"❌ France Travail erreur : {e}")
+        print(f"❌ France Travail : {e}")
         return []
 
 
 # ───────────────────────────────────────────────
 # WELCOME TO THE JUNGLE
 # ───────────────────────────────────────────────
-def scrape_wttj() -> list:
-    """Scrape Welcome to the Jungle via leur API publique."""
+def scrape_wttj():
     offres = []
+    queries = ["data engineer", "ingénieur data", "big data engineer", "dataops", "mlops", "analytics engineer", "data architect"]
     try:
-        url = "https://www.welcometothejungle.com/api/v1/jobs"
-        params = {
-            "query": "data engineer",
-            "contract_type[]": "apprenticeship",
-            "page": 1,
-            "per_page": 30,
-        }
-        r = requests.get(url, headers=HEADERS, params=params, timeout=15)
-
-        # Si l'API JSON ne répond pas, on scrape le HTML
-        if r.status_code != 200 or "application/json" not in r.headers.get("Content-Type", ""):
-            return scrape_wttj_html()
-
-        data = r.json()
-        jobs = data.get("jobs", data.get("results", []))
-
-        for j in jobs:
-            offres.append({
-                "titre": j.get("name", j.get("title", "")),
-                "entreprise": j.get("company", {}).get("name", "N/A") if isinstance(j.get("company"), dict) else j.get("company", "N/A"),
-                "lieu": j.get("location", {}).get("city", "") if isinstance(j.get("location"), dict) else "",
-                "date_publication": j.get("published_at", j.get("created_at", ""))[:10] if j.get("published_at") or j.get("created_at") else "",
-                "contrat": "Alternance",
-                "source": "Welcome to the Jungle",
-                "lien": f"https://www.welcometothejungle.com/fr/jobs/{j.get('slug', '')}",
-                "description": j.get("description", "")[:300] if isinstance(j.get("description"), str) else "",
-            })
-
-        print(f"✅ Welcome to the Jungle (API) : {len(offres)} offres")
+        for query in queries:
+            url = "https://www.welcometothejungle.com/fr/jobs"
+            params = {"query": query, "contract_type[]": "apprenticeship", "page": 1, "per_page": 20}
+            r = requests.get(url, headers=HEADERS, params=params, timeout=15)
+            soup = BeautifulSoup(r.text, "html.parser")
+            cards = soup.find_all("li", {"data-testid": re.compile("job-card")}) or soup.find_all("article")
+            for card in cards:
+                titre_el = card.find(["h3", "h2", "a"])
+                entreprise_el = card.find(attrs={"data-testid": re.compile("company")})
+                lieu_el = card.find(attrs={"data-testid": re.compile("location")})
+                lien_el = card.find("a", href=True)
+                offres.append({
+                    "titre": titre_el.get_text(strip=True) if titre_el else "N/A",
+                    "entreprise": entreprise_el.get_text(strip=True) if entreprise_el else "N/A",
+                    "lieu": lieu_el.get_text(strip=True) if lieu_el else "N/A",
+                    "date_publication": datetime.now().strftime("%Y-%m-%d"),
+                    "contrat": "Alternance",
+                    "source": "Welcome to the Jungle",
+                    "lien": "https://www.welcometothejungle.com" + lien_el["href"] if lien_el else "N/A",
+                    "description": "",
+                })
+            time.sleep(1)
+        print(f"✅ Welcome to the Jungle : {len(offres)} offres")
         return offres
-
     except Exception as e:
-        print(f"⚠️  WTTJ API : {e} → tentative HTML")
-        return scrape_wttj_html()
-
-
-def scrape_wttj_html() -> list:
-    """Fallback : scrape HTML Welcome to the Jungle."""
-    offres = []
-    try:
-        url = "https://www.welcometothejungle.com/fr/jobs?query=data+engineer&contract_type%5B%5D=apprenticeship"
-        r = requests.get(url, headers=HEADERS, timeout=15)
-        soup = BeautifulSoup(r.text, "html.parser")
-
-        cards = soup.find_all("li", {"data-testid": re.compile("job-card")})
-        if not cards:
-            cards = soup.find_all("article")
-
-        for card in cards[:30]:
-            titre_el = card.find(["h3", "h2", "a"])
-            entreprise_el = card.find(attrs={"data-testid": re.compile("company")})
-            lieu_el = card.find(attrs={"data-testid": re.compile("location")})
-            lien_el = card.find("a", href=True)
-
-            offres.append({
-                "titre": titre_el.get_text(strip=True) if titre_el else "N/A",
-                "entreprise": entreprise_el.get_text(strip=True) if entreprise_el else "N/A",
-                "lieu": lieu_el.get_text(strip=True) if lieu_el else "N/A",
-                "date_publication": datetime.now().strftime("%Y-%m-%d"),
-                "contrat": "Alternance",
-                "source": "Welcome to the Jungle",
-                "lien": "https://www.welcometothejungle.com" + lien_el["href"] if lien_el else "N/A",
-                "description": "",
-            })
-
-        print(f"✅ Welcome to the Jungle (HTML) : {len(offres)} offres")
-        return offres
-
-    except Exception as e:
-        print(f"❌ WTTJ HTML erreur : {e}")
+        print(f"❌ WTTJ : {e}")
         return []
 
 
 # ───────────────────────────────────────────────
 # JOBTEASER
 # ───────────────────────────────────────────────
-def scrape_jobteaser() -> list:
-    """Scrape JobTeaser pour les offres d'alternance data engineer."""
+def scrape_jobteaser():
     offres = []
+    queries = ["data engineer", "ingénieur data", "big data", "dataops", "mlops", "analytics engineer", "architecte data"]
     try:
-        url = "https://www.jobteaser.com/fr/job-offers"
-        params = {
-            "q": "data engineer",
-            "contract_types[]": "apprenticeship",
-            "locale": "fr",
-        }
-        r = requests.get(url, headers=HEADERS, params=params, timeout=15)
-        soup = BeautifulSoup(r.text, "html.parser")
-
-        # Cherche les cartes d'offres
-        cards = soup.find_all("article") or soup.find_all("div", class_=re.compile("job|offer|card", re.I))
-
-        for card in cards[:30]:
-            titre_el = card.find(["h2", "h3", "h4"]) or card.find("a")
-            entreprise_el = card.find(class_=re.compile("company|employer", re.I))
-            lieu_el = card.find(class_=re.compile("location|city|lieu", re.I))
-            date_el = card.find(["time", "span"], class_=re.compile("date|time|published", re.I))
-            lien_el = card.find("a", href=True)
-
-            titre = titre_el.get_text(strip=True) if titre_el else ""
-            if not titre or not any(k in titre.lower() for k in ["data", "engineer", "ingénieur"]):
-                continue
-
-            offres.append({
-                "titre": titre,
-                "entreprise": entreprise_el.get_text(strip=True) if entreprise_el else "N/A",
-                "lieu": lieu_el.get_text(strip=True) if lieu_el else "France",
-                "date_publication": date_el.get("datetime", datetime.now().strftime("%Y-%m-%d"))[:10] if date_el else datetime.now().strftime("%Y-%m-%d"),
-                "contrat": "Alternance",
-                "source": "JobTeaser",
-                "lien": "https://www.jobteaser.com" + lien_el["href"] if lien_el and lien_el["href"].startswith("/") else (lien_el["href"] if lien_el else "N/A"),
-                "description": "",
-            })
-
+        for query in queries:
+            url = "https://www.jobteaser.com/fr/job-offers"
+            params = {"q": query, "contract_types[]": "apprenticeship", "locale": "fr"}
+            r = requests.get(url, headers=HEADERS, params=params, timeout=15)
+            soup = BeautifulSoup(r.text, "html.parser")
+            cards = soup.find_all("article") or soup.find_all("div", class_=re.compile("job|offer|card", re.I))
+            for card in cards[:20]:
+                titre_el = card.find(["h2", "h3", "h4"]) or card.find("a")
+                entreprise_el = card.find(class_=re.compile("company|employer", re.I))
+                lieu_el = card.find(class_=re.compile("location|city|lieu", re.I))
+                date_el = card.find(["time"])
+                lien_el = card.find("a", href=True)
+                titre = titre_el.get_text(strip=True) if titre_el else ""
+                if not titre:
+                    continue
+                offres.append({
+                    "titre": titre,
+                    "entreprise": entreprise_el.get_text(strip=True) if entreprise_el else "N/A",
+                    "lieu": lieu_el.get_text(strip=True) if lieu_el else "France",
+                    "date_publication": date_el.get("datetime", datetime.now().strftime("%Y-%m-%d"))[:10] if date_el else datetime.now().strftime("%Y-%m-%d"),
+                    "contrat": "Alternance",
+                    "source": "JobTeaser",
+                    "lien": "https://www.jobteaser.com" + lien_el["href"] if lien_el and lien_el["href"].startswith("/") else (lien_el["href"] if lien_el else "N/A"),
+                    "description": "",
+                })
+            time.sleep(1)
         print(f"✅ JobTeaser : {len(offres)} offres")
         return offres
-
     except Exception as e:
-        print(f"❌ JobTeaser erreur : {e}")
+        print(f"❌ JobTeaser : {e}")
         return []
 
 
 # ───────────────────────────────────────────────
 # INDEED
 # ───────────────────────────────────────────────
-def scrape_indeed() -> list:
-    """Scrape Indeed France pour alternance data engineer."""
+def scrape_indeed():
     offres = []
+    queries = [
+        "data engineer alternance", "ingénieur data alternance",
+        "big data engineer alternance", "dataops alternance",
+        "mlops alternance", "analytics engineer alternance",
+        "architecte data alternance", "etl engineer alternance",
+    ]
     try:
-        url = "https://fr.indeed.com/jobs"
-        params = {
-            "q": "data engineer alternance",
-            "l": "France",
-            "sc": "0kf:jt(apprenticeship);",
-            "sort": "date",
-        }
-        r = requests.get(url, headers=HEADERS, params=params, timeout=15)
-        soup = BeautifulSoup(r.text, "html.parser")
-
-        cards = soup.find_all("div", class_=re.compile("job_seen_beacon|jobCard|result", re.I))
-
-        for card in cards[:30]:
-            titre_el = card.find("h2", class_=re.compile("jobTitle|title", re.I))
-            entreprise_el = card.find("span", class_=re.compile("company|employer", re.I))
-            lieu_el = card.find("div", class_=re.compile("location|companyLocation", re.I))
-            date_el = card.find("span", class_=re.compile("date|posted", re.I))
-            lien_el = card.find("a", href=True)
-
-            titre = titre_el.get_text(strip=True) if titre_el else ""
-            if not titre:
-                continue
-
-            lien = ""
-            if lien_el:
-                href = lien_el.get("href", "")
-                lien = "https://fr.indeed.com" + href if href.startswith("/") else href
-
-            offres.append({
-                "titre": titre,
-                "entreprise": entreprise_el.get_text(strip=True) if entreprise_el else "N/A",
-                "lieu": lieu_el.get_text(strip=True) if lieu_el else "France",
-                "date_publication": date_el.get_text(strip=True) if date_el else datetime.now().strftime("%Y-%m-%d"),
-                "contrat": "Alternance",
-                "source": "Indeed",
-                "lien": lien or "N/A",
-                "description": "",
-            })
-
+        for query in queries:
+            url = "https://fr.indeed.com/jobs"
+            params = {"q": query, "l": "France", "sort": "date"}
+            r = requests.get(url, headers=HEADERS, params=params, timeout=15)
+            soup = BeautifulSoup(r.text, "html.parser")
+            cards = soup.find_all("div", class_=re.compile("job_seen_beacon|jobCard|result", re.I))
+            for card in cards[:15]:
+                titre_el = card.find("h2", class_=re.compile("jobTitle|title", re.I))
+                entreprise_el = card.find("span", class_=re.compile("company|employer", re.I))
+                lieu_el = card.find("div", class_=re.compile("location|companyLocation", re.I))
+                date_el = card.find("span", class_=re.compile("date|posted", re.I))
+                lien_el = card.find("a", href=True)
+                titre = titre_el.get_text(strip=True) if titre_el else ""
+                if not titre:
+                    continue
+                lien = ""
+                if lien_el:
+                    href = lien_el.get("href", "")
+                    lien = "https://fr.indeed.com" + href if href.startswith("/") else href
+                offres.append({
+                    "titre": titre,
+                    "entreprise": entreprise_el.get_text(strip=True) if entreprise_el else "N/A",
+                    "lieu": lieu_el.get_text(strip=True) if lieu_el else "France",
+                    "date_publication": date_el.get_text(strip=True) if date_el else datetime.now().strftime("%Y-%m-%d"),
+                    "contrat": "Alternance",
+                    "source": "Indeed",
+                    "lien": lien or "N/A",
+                    "description": "",
+                })
+            time.sleep(1)
         print(f"✅ Indeed : {len(offres)} offres")
         return offres
-
     except Exception as e:
-        print(f"❌ Indeed erreur : {e}")
+        print(f"❌ Indeed : {e}")
         return []
 
 
 # ───────────────────────────────────────────────
 # HELLOWORK
 # ───────────────────────────────────────────────
-def scrape_hellowork() -> list:
-    """Scrape HelloWork pour alternance data engineer."""
+def scrape_hellowork():
     offres = []
+    queries = [
+        "data engineer", "ingénieur data", "big data engineer",
+        "dataops", "mlops", "analytics engineer", "architecte data", "etl engineer",
+    ]
     try:
-        url = "https://www.hellowork.com/fr-fr/emploi/recherche.html"
-        params = {
-            "k": "data engineer",
-            "c": "alternance",
-            "s": "date",
-        }
-        r = requests.get(url, headers=HEADERS, params=params, timeout=15)
-        soup = BeautifulSoup(r.text, "html.parser")
-
-        cards = soup.find_all("article") or soup.find_all("li", class_=re.compile("job|offer", re.I))
-
-        for card in cards[:30]:
-            titre_el = card.find(["h2", "h3"])
-            entreprise_el = card.find(class_=re.compile("company|employer|entreprise", re.I))
-            lieu_el = card.find(class_=re.compile("location|localisation|city", re.I))
-            date_el = card.find(["time"])
-            lien_el = card.find("a", href=True)
-
-            titre = titre_el.get_text(strip=True) if titre_el else ""
-            if not titre:
-                continue
-
-            offres.append({
-                "titre": titre,
-                "entreprise": entreprise_el.get_text(strip=True) if entreprise_el else "N/A",
-                "lieu": lieu_el.get_text(strip=True) if lieu_el else "France",
-                "date_publication": date_el.get("datetime", datetime.now().strftime("%Y-%m-%d"))[:10] if date_el else datetime.now().strftime("%Y-%m-%d"),
-                "contrat": "Alternance",
-                "source": "HelloWork",
-                "lien": lien_el["href"] if lien_el else "N/A",
-                "description": "",
-            })
-
+        for query in queries:
+            url = "https://www.hellowork.com/fr-fr/emploi/recherche.html"
+            params = {"k": f"{query} alternance", "c": "alternance", "s": "date"}
+            r = requests.get(url, headers=HEADERS, params=params, timeout=15)
+            soup = BeautifulSoup(r.text, "html.parser")
+            cards = soup.find_all("article") or soup.find_all("li", class_=re.compile("job|offer", re.I))
+            for card in cards[:15]:
+                titre_el = card.find(["h2", "h3"])
+                entreprise_el = card.find(class_=re.compile("company|employer|entreprise", re.I))
+                lieu_el = card.find(class_=re.compile("location|localisation|city", re.I))
+                date_el = card.find(["time"])
+                lien_el = card.find("a", href=True)
+                titre = titre_el.get_text(strip=True) if titre_el else ""
+                if not titre:
+                    continue
+                offres.append({
+                    "titre": titre,
+                    "entreprise": entreprise_el.get_text(strip=True) if entreprise_el else "N/A",
+                    "lieu": lieu_el.get_text(strip=True) if lieu_el else "France",
+                    "date_publication": date_el.get("datetime", datetime.now().strftime("%Y-%m-%d"))[:10] if date_el else datetime.now().strftime("%Y-%m-%d"),
+                    "contrat": "Alternance",
+                    "source": "HelloWork",
+                    "lien": lien_el["href"] if lien_el else "N/A",
+                    "description": "",
+                })
+            time.sleep(1)
         print(f"✅ HelloWork : {len(offres)} offres")
         return offres
-
     except Exception as e:
-        print(f"❌ HelloWork erreur : {e}")
+        print(f"❌ HelloWork : {e}")
         return []
 
 
 # ───────────────────────────────────────────────
 # DÉDUPLICATION
 # ───────────────────────────────────────────────
-def deduplicate(offres: list) -> list:
-    """Supprime les doublons basé sur titre + entreprise."""
+def deduplicate(offres):
     seen = set()
     unique = []
     for o in offres:
@@ -338,13 +292,32 @@ def deduplicate(offres: list) -> list:
 
 
 # ───────────────────────────────────────────────
+# TRI PAR DATE (du plus récent au plus ancien)
+# ───────────────────────────────────────────────
+def parse_date(date_str):
+    """Convertit une date string en objet datetime pour le tri."""
+    if not date_str:
+        return datetime.min
+    # Formats possibles
+    for fmt in ["%Y-%m-%d", "%d/%m/%Y", "%Y-%m-%dT%H:%M:%S", "%d-%m-%Y"]:
+        try:
+            return datetime.strptime(date_str[:10], fmt)
+        except:
+            continue
+    return datetime.min
+
+
+def sort_by_date(offres):
+    """Trie les offres du plus récent au plus ancien."""
+    return sorted(offres, key=lambda o: parse_date(o.get("date_publication", "")), reverse=True)
+
+
+# ───────────────────────────────────────────────
 # EXCEL
 # ───────────────────────────────────────────────
-def save_to_excel(offres: list, filepath: str):
-    """Crée ou met à jour le fichier Excel avec les offres."""
+def save_to_excel(offres, filepath):
     existing_liens = set()
 
-    # Charge les offres existantes pour ne pas dupliquer
     if os.path.exists(filepath):
         wb_exist = openpyxl.load_workbook(filepath)
         ws_exist = wb_exist.active
@@ -353,25 +326,47 @@ def save_to_excel(offres: list, filepath: str):
                 existing_liens.add(row[6])
         wb_exist.close()
 
-    # Filtre les nouvelles offres uniquement
     nouvelles = [o for o in offres if o["lien"] not in existing_liens]
-    print(f"\n📊 {len(nouvelles)} nouvelles offres à ajouter (sur {len(offres)} trouvées)")
+    print(f"\n📊 {len(nouvelles)} nouvelles offres à ajouter")
 
     if not nouvelles and os.path.exists(filepath):
-        print("ℹ️  Aucune nouvelle offre. Fichier inchangé.")
+        print("ℹ️  Aucune nouvelle offre.")
         return
 
-    # Ouvre ou crée le workbook
+    # Charge ou crée le workbook
     if os.path.exists(filepath):
         wb = openpyxl.load_workbook(filepath)
         ws = wb.active
+        # Récupère les offres existantes
+        existing_offres = []
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if row and any(row):
+                existing_offres.append({
+                    "titre": row[1] or "",
+                    "entreprise": row[2] or "",
+                    "lieu": row[3] or "",
+                    "date_publication": str(row[4]) if row[4] else "",
+                    "contrat": row[5] or "",
+                    "lien": row[6] or "",
+                    "source": row[7] or "",
+                    "date_collecte": str(row[8]) if row[8] else "",
+                    "description": row[9] or "",
+                })
+        # Fusionne et retrie tout
+        all_offres_combined = nouvelles + existing_offres
     else:
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Offres Alternance"
-        _create_header(ws)
+        all_offres_combined = nouvelles
 
-    # Couleurs par source
+    # Retrie tout par date
+    all_offres_combined = sort_by_date(all_offres_combined)
+
+    # Recrée la feuille proprement
+    ws.delete_rows(1, ws.max_row)
+    _create_header(ws)
+
     source_colors = {
         "France Travail": "E8F5E9",
         "Welcome to the Jungle": "E3F2FD",
@@ -379,25 +374,26 @@ def save_to_excel(offres: list, filepath: str):
         "Indeed": "F3E5F5",
         "HelloWork": "FCE4EC",
     }
-
     thin = Side(style="thin", color="CCCCCC")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-    for o in nouvelles:
-        row_idx = ws.max_row + 1
-        color = source_colors.get(o["source"], "FFFFFF")
+    for i, o in enumerate(all_offres_combined, 1):
+        row_idx = i + 1
+        color = source_colors.get(o.get("source", ""), "FFFFFF")
         fill = PatternFill("solid", start_color=color, end_color=color)
 
+        date_collecte = o.get("date_collecte", datetime.now().strftime("%Y-%m-%d %H:%M"))
+
         values = [
-            row_idx - 1,
-            o["titre"],
-            o["entreprise"],
-            o["lieu"],
-            o["date_publication"],
-            o["contrat"],
-            o["lien"],
-            o["source"],
-            datetime.now().strftime("%Y-%m-%d %H:%M"),
+            i,
+            o.get("titre", ""),
+            o.get("entreprise", ""),
+            o.get("lieu", ""),
+            o.get("date_publication", ""),
+            o.get("contrat", "Alternance"),
+            o.get("lien", ""),
+            o.get("source", ""),
+            date_collecte,
             o.get("description", ""),
         ]
 
@@ -408,15 +404,12 @@ def save_to_excel(offres: list, filepath: str):
             cell.alignment = Alignment(vertical="center", wrap_text=(col_idx == 10))
             cell.font = Font(name="Arial", size=10)
 
-        # Lien cliquable
-        if o["lien"] and o["lien"] != "N/A":
+        if o.get("lien") and o.get("lien") != "N/A":
             ws.cell(row=row_idx, column=7).hyperlink = o["lien"]
             ws.cell(row=row_idx, column=7).font = Font(name="Arial", size=10, color="0563C1", underline="single")
 
-    # Mise à jour du compteur dans l'onglet Stats
-    _update_stats_sheet(wb, offres)
+    _update_stats_sheet(wb, all_offres_combined)
 
-    # Freeze panes + filtre auto
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
 
@@ -425,14 +418,11 @@ def save_to_excel(offres: list, filepath: str):
 
 
 def _create_header(ws):
-    """Crée la ligne d'en-tête stylisée."""
     headers = ["#", "Titre du poste", "Entreprise", "Lieu", "Date publication",
                "Type contrat", "Lien", "Source", "Récupéré le", "Description"]
-
     header_fill = PatternFill("solid", start_color="1565C0", end_color="1565C0")
     thin = Side(style="thin", color="CCCCCC")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
-
     col_widths = [5, 40, 25, 20, 18, 15, 50, 20, 18, 60]
 
     for col_idx, (h, w) in enumerate(zip(headers, col_widths), 1):
@@ -442,12 +432,10 @@ def _create_header(ws):
         cell.alignment = Alignment(horizontal="center", vertical="center")
         cell.border = border
         ws.column_dimensions[get_column_letter(col_idx)].width = w
-
     ws.row_dimensions[1].height = 30
 
 
 def _update_stats_sheet(wb, offres):
-    """Met à jour ou crée l'onglet Statistiques."""
     if "Statistiques" in wb.sheetnames:
         ws_stats = wb["Statistiques"]
         ws_stats.delete_rows(1, ws_stats.max_row)
@@ -455,9 +443,12 @@ def _update_stats_sheet(wb, offres):
         ws_stats = wb.create_sheet("Statistiques")
 
     header_fill = PatternFill("solid", start_color="1565C0", end_color="1565C0")
+    thin = Side(style="thin", color="CCCCCC")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-    ws_stats["A1"] = "📊 Tableau de bord — Alternances Data Engineer"
+    ws_stats["A1"] = "Tableau de bord — Alternances Data Engineer"
     ws_stats["A1"].font = Font(name="Arial", bold=True, size=14, color="1565C0")
+    ws_stats.merge_cells("A1:C1")
     ws_stats["A3"] = "Dernière mise à jour :"
     ws_stats["B3"] = datetime.now().strftime("%d/%m/%Y à %H:%M")
     ws_stats["A3"].font = Font(bold=True, name="Arial")
@@ -465,42 +456,49 @@ def _update_stats_sheet(wb, offres):
 
     ws_stats["A5"] = "Source"
     ws_stats["B5"] = "Nb offres"
-    for cell in [ws_stats["A5"], ws_stats["B5"]]:
-        cell.fill = header_fill
-        cell.font = Font(bold=True, color="FFFFFF", name="Arial")
-        cell.alignment = Alignment(horizontal="center")
+    ws_stats["C5"] = "% du total"
+    for cell_ref in ["A5", "B5", "C5"]:
+        c = ws_stats[cell_ref]
+        c.fill = header_fill
+        c.font = Font(bold=True, color="FFFFFF", name="Arial")
+        c.alignment = Alignment(horizontal="center")
+        c.border = border
 
     from collections import Counter
-    counts = Counter(o["source"] for o in offres)
+    counts = Counter(o.get("source", "Autre") for o in offres)
     row = 6
     for source, count in sorted(counts.items()):
         ws_stats.cell(row=row, column=1, value=source).font = Font(name="Arial")
+        ws_stats.cell(row=row, column=1).border = border
         ws_stats.cell(row=row, column=2, value=count).font = Font(name="Arial")
         ws_stats.cell(row=row, column=2).alignment = Alignment(horizontal="center")
+        ws_stats.cell(row=row, column=2).border = border
+        ws_stats.cell(row=row, column=3, value=f"=B{row}/SUM(B6:B{row+len(counts)-1})").font = Font(name="Arial")
+        ws_stats.cell(row=row, column=3).number_format = "0.0%"
+        ws_stats.cell(row=row, column=3).alignment = Alignment(horizontal="center")
+        ws_stats.cell(row=row, column=3).border = border
         row += 1
 
     ws_stats.cell(row=row, column=1, value="TOTAL").font = Font(bold=True, name="Arial")
     ws_stats.cell(row=row, column=2, value=f"=SUM(B6:B{row-1})").font = Font(bold=True, name="Arial")
+    ws_stats.cell(row=row, column=2).alignment = Alignment(horizontal="center")
+    ws_stats.cell(row=row, column=3, value="100%").font = Font(bold=True, name="Arial")
+    ws_stats.cell(row=row, column=3).alignment = Alignment(horizontal="center")
 
     ws_stats.column_dimensions["A"].width = 25
     ws_stats.column_dimensions["B"].width = 12
+    ws_stats.column_dimensions["C"].width = 14
 
 
 # ───────────────────────────────────────────────
 # MAIN
 # ───────────────────────────────────────────────
-def run_scraper(
-    france_travail_id: str = None,
-    france_travail_secret: str = None,
-    output_file: str = OUTPUT_FILE,
-):
-    print(f"\n{'='*50}")
+def run_scraper(france_travail_id=None, france_travail_secret=None, output_file=OUTPUT_FILE):
+    print(f"\n{'='*55}")
     print(f"🚀 Démarrage scraping — {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
-    print(f"{'='*50}\n")
+    print(f"{'='*55}\n")
 
     all_offres = []
-
-    # Lance chaque scraper
     all_offres += scrape_france_travail(france_travail_id, france_travail_secret)
     time.sleep(2)
     all_offres += scrape_wttj()
@@ -511,22 +509,15 @@ def run_scraper(
     time.sleep(2)
     all_offres += scrape_hellowork()
 
-    # Déduplique
     all_offres = deduplicate(all_offres)
-    print(f"\n📋 Total après déduplication : {len(all_offres)} offres")
+    all_offres = sort_by_date(all_offres)
 
-    # Sauvegarde Excel
+    print(f"\n📋 Total après déduplication et tri : {len(all_offres)} offres")
     save_to_excel(all_offres, output_file)
-
     return len(all_offres)
 
 
 if __name__ == "__main__":
-    # ⚠️ Remplace par tes vraies clés France Travail (optionnel)
     FT_CLIENT_ID = os.getenv("FRANCE_TRAVAIL_ID", "")
     FT_CLIENT_SECRET = os.getenv("FRANCE_TRAVAIL_SECRET", "")
-
-    run_scraper(
-        france_travail_id=FT_CLIENT_ID,
-        france_travail_secret=FT_CLIENT_SECRET,
-    )
+    run_scraper(france_travail_id=FT_CLIENT_ID, france_travail_secret=FT_CLIENT_SECRET)
