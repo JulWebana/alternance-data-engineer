@@ -102,7 +102,7 @@ def scrape_france_travail(client_id=None, client_secret=None):
                     "description": o.get("description", "")[:300],
                 })
             time.sleep(1)
-        print(f"✅ France Travail : {len(all_offres)} offres")
+        print(f" France Travail : {len(all_offres)} offres")
         return all_offres
     except Exception as e:
         print(f"❌ France Travail : {e}")
@@ -138,7 +138,7 @@ def scrape_wttj():
                     "description": "",
                 })
             time.sleep(1)
-        print(f"✅ Welcome to the Jungle : {len(offres)} offres")
+        print(f" Welcome to the Jungle : {len(offres)} offres")
         return offres
     except Exception as e:
         print(f"❌ WTTJ : {e}")
@@ -178,7 +178,7 @@ def scrape_jobteaser():
                     "description": "",
                 })
             time.sleep(1)
-        print(f"✅ JobTeaser : {len(offres)} offres")
+        print(f" JobTeaser : {len(offres)} offres")
         return offres
     except Exception as e:
         print(f"❌ JobTeaser : {e}")
@@ -227,10 +227,10 @@ def scrape_indeed():
                     "description": "",
                 })
             time.sleep(1)
-        print(f"✅ Indeed : {len(offres)} offres")
+        print(f" Indeed : {len(offres)} offres")
         return offres
     except Exception as e:
-        print(f"❌ Indeed : {e}")
+        print(f" Indeed : {e}")
         return []
 
 
@@ -270,10 +270,10 @@ def scrape_hellowork():
                     "description": "",
                 })
             time.sleep(1)
-        print(f"✅ HelloWork : {len(offres)} offres")
+        print(f" HelloWork : {len(offres)} offres")
         return offres
     except Exception as e:
-        print(f"❌ HelloWork : {e}")
+        print(f" HelloWork : {e}")
         return []
 
 
@@ -327,10 +327,10 @@ def save_to_excel(offres, filepath):
         wb_exist.close()
 
     nouvelles = [o for o in offres if o["lien"] not in existing_liens]
-    print(f"\n📊 {len(nouvelles)} nouvelles offres à ajouter")
+    print(f"\n {len(nouvelles)} nouvelles offres à ajouter")
 
     if not nouvelles and os.path.exists(filepath):
-        print("ℹ️  Aucune nouvelle offre.")
+        print("  Aucune nouvelle offre.")
         return
 
     # Charge ou crée le workbook
@@ -414,7 +414,7 @@ def save_to_excel(offres, filepath):
     ws.auto_filter.ref = ws.dimensions
 
     wb.save(filepath)
-    print(f"✅ Fichier sauvegardé : {filepath}")
+    print(f" Fichier sauvegardé : {filepath}")
 
 
 def _create_header(ws):
@@ -495,7 +495,7 @@ def _update_stats_sheet(wb, offres):
 # ───────────────────────────────────────────────
 def run_scraper(france_travail_id=None, france_travail_secret=None, output_file=OUTPUT_FILE):
     print(f"\n{'='*55}")
-    print(f"🚀 Démarrage scraping — {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+    print(f" Démarrage scraping — {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
     print(f"{'='*55}\n")
 
     all_offres = []
@@ -512,7 +512,7 @@ def run_scraper(france_travail_id=None, france_travail_secret=None, output_file=
     all_offres = deduplicate(all_offres)
     all_offres = sort_by_date(all_offres)
 
-    print(f"\n📋 Total après déduplication et tri : {len(all_offres)} offres")
+    print(f"\n Total après déduplication et tri : {len(all_offres)} offres")
     save_to_excel(all_offres, output_file)
     return len(all_offres)
 
