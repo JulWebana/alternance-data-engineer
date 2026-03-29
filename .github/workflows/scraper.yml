@@ -1,28 +1,77 @@
-name: Scraper Alternance Data Engineer
+# =============================================================
+# WORKFLOW GITHUB ACTIONS — SCRAPER ALTERNANCE DATA ENGINEER
+# =============================================================
+# Ce fichier dit à GitHub "lance automatiquement le scraper
+# selon ce planning, sur un serveur distant".
+# Aucun ordinateur personnel n'a besoin d'être allumé.
+# =============================================================
 
+name: Scraper Alternance Data Engineer  # Nom affiché dans l'onglet Actions de GitHub
+
+# -------------------------------------------------------------
+# DÉCLENCHEURS : quand est-ce que le workflow se lance ?
+# -------------------------------------------------------------
 on:
   schedule:
+    # Syntaxe cron : minute heure jour_du_mois mois jour_de_la_semaine
+    # "0 * * * *" = à la minute 0 de chaque heure = toutes les heures
     - cron: "0 * * * *"
+
+  # Permet aussi de lancer le workflow manuellement depuis GitHub
+  # via le bouton "Run workflow" dans l'onglet Actions
   workflow_dispatch:
 
+# -------------------------------------------------------------
+# JOBS : les tâches à exécuter
+# -------------------------------------------------------------
 jobs:
-  scrape:
+  scrape:  # Nom du job (on aurait pu l'appeler autrement)
+
+    # On utilise un serveur Ubuntu fourni gratuitement par GitHub
     runs-on: ubuntu-latest
+
+    # Permissions nécessaires pour que le bot puisse
+    # écrire et pousser le fichier Excel sur le dépôt
     permissions:
       contents: write
+
+    # Liste des étapes exécutées dans l'ordre
     steps:
+
+      # Étape 1 : Télécharge le code du dépôt sur le serveur GitHub
+      # Sans cette étape, le serveur ne saurait pas quoi exécuter
       - uses: actions/checkout@v4
+
+      # Étape 2 : Installe Python 3.11 sur le serveur
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      # Étape 3 : Installe les bibliothèques Python listées dans requirements.txt
+      # (requests, beautifulsoup4, openpyxl, etc.)
       - run: pip install -r requirements.txt
+
+      # Étape 4 : Lance le scraper Python
+      # Les clés API France Travail sont injectées depuis les Secrets GitHub
+      # (Settings → Secrets → Actions) pour ne pas les écrire en clair ici
       - run: python job_scraper.py
         env:
           FRANCE_TRAVAIL_ID: ${{ secrets.FRANCE_TRAVAIL_ID }}
           FRANCE_TRAVAIL_SECRET: ${{ secrets.FRANCE_TRAVAIL_SECRET }}
+
+      # Étape 5 : Sauvegarde le fichier Excel mis à jour sur GitHub
       - run: |
+          # Configure l'identité du "bot" qui va faire le commit
           git config --local user.email "bot@github-actions.com"
           git config --local user.name "Scraper Bot"
+
+          # Ajoute tous les fichiers modifiés (notamment le fichier Excel)
           git add -A
+
+          # Crée un commit uniquement s'il y a des changements
+          # (si aucune nouvelle offre, on ne crée pas de commit inutile)
           git diff --staged --quiet || git commit -m "Mise a jour offres"
+
+          # Pousse les changements sur GitHub
+          # "|| true" évite que le workflow échoue si rien n'a changé
           git push || true
