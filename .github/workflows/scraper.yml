@@ -2,8 +2,7 @@ name: Scraper Alternance Data Engineer
 
 on:
   schedule:
-    - cron: "*/30 5-21 * * 1-5"
-    - cron: "0 8,12,16 * * 6-7"
+    - cron: "*/30 5-21 * * *"
   workflow_dispatch:
 
 jobs:
@@ -33,7 +32,7 @@ jobs:
           FRANCE_TRAVAIL_SECRET: ${{ secrets.FRANCE_TRAVAIL_SECRET }}
         run: python job_scraper.py
 
-      - name: Commit et Push du fichier Excel
+      - name: Commit et Push
         run: |
           git config --local user.email "bot@github-actions.com"
           git config --local user.name "Scraper Bot"
