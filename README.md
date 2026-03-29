@@ -1,6 +1,6 @@
-# 🔍 Alternance Data Engineer — Veille automatique des offres
+# 🔍 Alternance Data Engineer - Veille automatique des offres
 
-Outil de veille automatique qui collecte, déduplique et classe les offres d'alternance liées au métier de **Data Engineer** en France, depuis plusieurs jobboards, et les exporte dans un fichier Excel mis à jour en continu.
+Outil de veille automatique qui collecte, déduplique et classe les offres d'alternance liées au métier de **Data Engineer** en France depuis plusieurs jobboards et les exporte dans un fichier Excel mis à jour en continu.
 
 ---
 
